@@ -1,0 +1,56 @@
+# Byte-compiled / optimized
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Конфиг с секретами (не коммитить)
+config.yaml
+*.local.yaml
+.env
+.env.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Тесты и линтеры
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+ruff_cache/
+
+# Логи и отладочные скриншоты
+*.log
+logs/
+debug_screenshot_*.png

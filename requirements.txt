@@ -1,0 +1,5 @@
+# script2_web_add_to_group.py — добавление в группу MAX по имени через веб
+# Python 3.10+
+
+pyyaml>=6.0
+playwright>=1.40.0
