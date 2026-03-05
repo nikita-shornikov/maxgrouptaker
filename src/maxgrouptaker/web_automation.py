@@ -74,14 +74,14 @@ class MaxWebAutomation:
             "member_item": "[data-member-id], [data-user-id], .item[data-index]",  # Элемент участника в списке
             
             # Добавление участников
-            "add_members_button": "button:has-text('Подписчики'), button.cell--clickable:has-text('Подписчики'), button.cell--primary:has-text('Подписчики'), button.cell--clickable.cell--primary:has-text('Подписчики')",  # Кнопка "Подписчики" для перехода в меню подписчиков
+            "add_members_button": "button:has-text('Добавить участников'), button.cell--primary.cell--clickable:has-text('Добавить участников'), button.cell.cell--primary:has-text('Добавить участников')",  # Кнопка "Добавить участников" для открытия модального окна добавления
             "add_in_subscribers_button": "button:has-text('Добавить'), button.cell--clickable:has-text('Добавить'), .content button.cell--clickable.cell--primary",  # Кнопка добавления участников ВНУТРИ меню подписчиков
             "add_modal": ".modal",  # Модальное окно добавления участников
-            "add_modal_search": ".modal .search input, .modal input[placeholder*='Поиск'], .modal input[placeholder*='поиск'], .modal input[placeholder*='Найти по имени']",  # Поле поиска/ввода имени в модальном окне
+            "add_modal_search": "[data-testid='modal'] input[placeholder='Найти по имени'], [data-testid='modal'] .search input, .modal .search input, .modal input[placeholder*='Найти по имени'], .modal input[placeholder*='Поиск']",  # Поле поиска/ввода имени в модальном окне «Выберите участников»
             "add_by_phone_input": "input[type='tel'], input[placeholder*='номер'], input[placeholder*='телефон'], .modal .search input",  # Поле ввода номера для добавления
             "add_modal_list": ".modal .list .item[data-index]",  # Элементы списка в модальном окне (для выбора из результатов поиска)
             "add_modal_item_button": ".modal .item[data-index] button.cell--clickable",  # Кнопка добавления внутри элемента списка (кнопка для добавления в список)
-            "add_button": "button[aria-label='Добавить'], button[aria-label='добавить'], button.button--neutral-primary:has-text('Добавить'), button:has-text('Добавить'), button:has-text('добавить')",  # Кнопка финального подтверждения добавления участника в группу
+            "add_button": "button[aria-label*='добавить'], button.button--neutral-primary.button--stretched:has-text('Добавить'), button[aria-label='Добавить'], button[aria-label='добавить'], button.button--neutral-primary:has-text('Добавить'), button:has-text('Добавить')",  # Кнопка финального подтверждения «Добавить» (aria-label может быть «добавить.»)
             
             # Общие
             "close_button": "button[aria-label*='Закрыть'], button[aria-label*='закрыть']",  # Кнопка закрытия
@@ -645,13 +645,13 @@ class MaxWebAutomation:
                     logger.info("Продолжаем без открытия профиля...")
                     time.sleep(2)
             
-            # Шаг 1: Открыть меню добавления участников (кнопка "Подписчики")
-            logger.info("Поиск кнопки 'Подписчики' для добавления участников...")
+            # Шаг 1: Открыть меню добавления участников (кнопка "Добавить участников" для группового чата; для канала — "Подписчики")
+            logger.info("Поиск кнопки добавления участников (add_members_button)...")
             add_button_selector = self.selectors.get("add_members_button")
             if add_button_selector:
                 try:
                     logger.debug("Селектор кнопки: %s", add_button_selector)
-                    # Ждём появления кнопки "Подписчики"
+                    # Ждём появления кнопки
                     try:
                         self.page.wait_for_selector(add_button_selector, timeout=15000, state="visible")
                         time.sleep(1)
@@ -661,88 +661,80 @@ class MaxWebAutomation:
                     add_button = self.page.locator(add_button_selector).first
                     logger.debug("Найдено элементов: %s", add_button.count())
                     
-                    # Если не найдено, пробуем найти по тексту
+                    # Если не найдено, пробуем найти по тексту "Добавить участников" (групповой чат) или "Подписчики" (канал)
                     if add_button.count() == 0:
-                        logger.info("Кнопка не найдена по селектору, ищем по тексту 'Подписчики'...")
-                        add_button = self.page.locator("button:has-text('Подписчики')").first
-                        logger.debug("Найдено кнопок с текстом 'Подписчики': %s", add_button.count())
+                        logger.info("Кнопка не найдена по селектору, ищем по тексту...")
+                        add_button = self.page.locator("button:has-text('Добавить участников'), button:has-text('Подписчики')").first
+                        logger.debug("Найдено кнопок: %s", add_button.count())
                     
                     if add_button.count() > 0:
-                        logger.info("Кнопка 'Подписчики' найдена, кликаем...")
+                        logger.info("Кнопка найдена, кликаем...")
                         add_button.click()
-                        time.sleep(4)  # Увеличено время ожидания открытия меню подписчиков
-                        logger.info("Меню 'Подписчики' открыто")
+                        time.sleep(2)
                         
-                        # Теперь нужно найти кнопку добавления участников ВНУТРИ меню подписчиков
-                        logger.info("Поиск кнопки добавления участников в меню подписчиков...")
-                        time.sleep(2)  # Дополнительное ожидание загрузки меню
-                        
-                        # Ищем кнопку добавления в меню подписчиков (может быть кнопка "Добавить" или другая)
-                        add_in_subscribers_selector = self.selectors.get("add_in_subscribers_button")
-                        add_in_subscribers_selectors = [
-                            add_in_subscribers_selector,
-                            "button:has-text('Добавить')",
-                            "button.cell--clickable:has-text('Добавить')",
-                            "button.cell--primary:has-text('Добавить')",
-                            ".content button.cell--clickable.cell--primary",
-                            "button.cell--clickable.cell--primary",
-                        ]
-                        
-                        add_in_subscribers_button = None
-                        for sel in add_in_subscribers_selectors:
-                            if not sel:
-                                continue
-                            try:
-                                logger.debug("Пробуем селектор: %s", sel)
-                                btn = self.page.locator(sel).first
-                                count = btn.count()
-                                logger.debug("Найдено элементов: %s", count)
-                                if count > 0:
-                                    logger.info("Кнопка добавления найдена по селектору: %s", sel)
-                                    add_in_subscribers_button = btn
-                                    break
-                            except Exception as e:
-                                logger.debug("Ошибка с селектором %s: %s", sel, e)
-                                continue
-                        
-                        if add_in_subscribers_button and add_in_subscribers_button.count() > 0:
-                            logger.info("Кликаем по кнопке добавления в меню подписчиков...")
-                            try:
-                                add_in_subscribers_button.click(timeout=5000, force=True)
-                                logger.info("Клик выполнен")
-                            except Exception as e:
-                                logger.debug("Обычный клик не сработал, пробуем через JavaScript: %s", e)
-                                # Пробуем через JavaScript
-                                self.page.evaluate("""
-                                    (function() {
-                                        const buttons = Array.from(document.querySelectorAll('button'));
-                                        const addBtn = buttons.find(btn => 
-                                            btn.textContent.includes('Добавить') && 
-                                            btn.classList.contains('cell--clickable')
-                                        );
-                                        if (addBtn) {
-                                            addBtn.click();
-                                            return true;
-                                        }
-                                        return false;
-                                    })();
-                                """)
-                                logger.info("Клик выполнен через JavaScript")
-                            time.sleep(4)  # Ждём открытия модального окна добавления
-                        else:
-                            logger.warning("Кнопка добавления в меню подписчиков не найдена")
-                            logger.info("Продолжаем, возможно модальное окно уже открыто...")
-                        
-                        # Ждём появления модального окна
+                        # В групповом чате модалка «Выберите участников» открывается сразу.
+                        # В канале сначала открывается меню, и нужен ещё клик по «Добавить».
+                        # Не кликаем по кнопке «Добавить» (add_in_subscribers), если модалка уже видна —
+                        # иначе можно нажать «Закрыть» или подтверждение и закрыть модалку.
+                        modal_selector = self.selectors.get("add_modal", ".modal")
+                        modal_already_open = False
                         try:
-                            modal_selector = self.selectors.get("add_modal", ".modal")
-                            logger.debug("Ожидание появления модального окна...")
-                            self.page.wait_for_selector(modal_selector, timeout=15000)
-                            time.sleep(3)  # Дополнительное ожидание для полной загрузки модального окна
+                            self.page.wait_for_selector(modal_selector, timeout=4000)
+                            # Проверяем, что видно именно модалку выбора участников (есть поле поиска)
+                            search_in_modal = self.page.locator("[data-testid='modal'] input[placeholder='Найти по имени'], .modal .search input").first
+                            if search_in_modal.count() > 0 and search_in_modal.is_visible():
+                                modal_already_open = True
+                                logger.info("Модальное окно «Выберите участников» уже открыто (групповой чат), второй клик не нужен")
+                        except Exception:
+                            pass
+                        
+                        if not modal_already_open:
+                            logger.info("Поиск кнопки добавления в меню (канал)...")
+                            time.sleep(2)
+                            add_in_subscribers_selector = self.selectors.get("add_in_subscribers_button")
+                            add_in_subscribers_selectors = [
+                                add_in_subscribers_selector,
+                                "button:has-text('Добавить')",
+                                "button.cell--clickable:has-text('Добавить')",
+                                "button.cell--primary:has-text('Добавить')",
+                                ".content button.cell--clickable.cell--primary",
+                                "button.cell--clickable.cell--primary",
+                            ]
+                            add_in_subscribers_button = None
+                            for sel in add_in_subscribers_selectors:
+                                if not sel:
+                                    continue
+                                try:
+                                    btn = self.page.locator(sel).first
+                                    if btn.count() > 0:
+                                        add_in_subscribers_button = btn
+                                        break
+                                except Exception:
+                                    continue
+                            if add_in_subscribers_button and add_in_subscribers_button.count() > 0:
+                                try:
+                                    add_in_subscribers_button.click(timeout=5000, force=True)
+                                    time.sleep(3)
+                                except Exception:
+                                    try:
+                                        self.page.evaluate("""(function(){
+                                            var b = Array.from(document.querySelectorAll('button')).find(function(btn){
+                                                return btn.textContent.includes('Добавить') && btn.classList.contains('cell--clickable');
+                                            });
+                                            if(b){ b.click(); return true; }
+                                            return false;
+                                        })();""")
+                                    except Exception:
+                                        pass
+                                    time.sleep(3)
+                        
+                        try:
+                            self.page.wait_for_selector(modal_selector, timeout=12000)
+                            time.sleep(2)
                             logger.info("Модальное окно добавления участников открыто")
                         except Exception as e:
-                            logger.warning("Модальное окно не появилось, но продолжаем: %s", e)
-                            time.sleep(3)  # Всё равно ждём дополнительное время
+                            logger.warning("Модальное окно не появилось: %s", e)
+                            time.sleep(2)
                     else:
                         logger.warning("Кнопка добавления не найдена по селектору: %s", add_button_selector)
                         logger.info("Попробуйте обновить селектор add_members_button в config.yaml")
@@ -754,34 +746,31 @@ class MaxWebAutomation:
                 logger.warning("Селектор add_members_button не настроен в config.yaml")
                 return 0
             
-            # Шаг 2: Найти поле поиска в модальном окне и ввести имя
+            # Шаг 2: Найти поле поиска в модальном окне («Найти по имени») и ввести имя
             logger.info("Поиск поля ввода имени в модальном окне...")
             modal_search_selector = self.selectors.get("add_modal_search")
-            search_input = None
-            if modal_search_selector:
-                logger.debug("Селектор поля поиска: %s", modal_search_selector)
-                search_input = self.page.locator(modal_search_selector).first
-                logger.debug("Найдено полей поиска: %s", search_input.count())
-            else:
-                # Если селектор не найден, пробуем найти поле поиска альтернативными способами
-                modal_search_selector = ".modal .search input, .modal input[placeholder*='Поиск'], .modal input[placeholder*='поиск'], .modal input[placeholder*='Найти по имени']"
-                search_input = self.page.locator(modal_search_selector).first
+            if not modal_search_selector:
+                modal_search_selector = "[data-testid='modal'] input[placeholder='Найти по имени'], [data-testid='modal'] .search input, .modal .search input, .modal input[placeholder*='Найти по имени']"
             
-            if not search_input or search_input.count() == 0:
+            logger.debug("Селектор поля поиска: %s", modal_search_selector)
+            # Ждём появления поля поиска в модальном окне (модал «Выберите участников»)
+            try:
+                self.page.wait_for_selector(modal_search_selector, timeout=10000, state="visible")
+                time.sleep(0.5)  # даём полю отрисоваться
+            except Exception as e:
+                logger.warning("Ожидание поля поиска по селектору не сработало: %s", e)
+            
+            search_input = self.page.locator(modal_search_selector).first
+            if search_input.count() == 0:
                 logger.warning("Поле поиска не найдено по селектору: %s", modal_search_selector)
-                logger.info("Попробуйте обновить селектор add_modal_search в config.yaml")
-                # Пробуем найти любое поле input в модальном окне
-                logger.info("Пробуем найти любое поле input в модальном окне...")
-                modal_selector = self.selectors.get("add_modal", ".modal")
-                if modal_selector:
-                    all_inputs = self.page.locator(f"{modal_selector} input").all()
-                    logger.info("Найдено input полей в модальном окне: %s", len(all_inputs))
-                    if len(all_inputs) > 0:
-                        search_input = all_inputs[0]
-                        logger.info("Используем первое найденное поле input")
-                    else:
-                        return 0
+                logger.info("Пробуем найти поле по [data-testid='modal'] или .modal...")
+                fallback = self.page.locator("[data-testid='modal'] input[type='text'], .modal .body input").first
+                if fallback.count() > 0:
+                    search_input = fallback
+                    modal_search_selector = "[data-testid='modal'] input[type='text'], .modal .body input"
+                    logger.info("Используем запасной селектор поля поиска")
                 else:
+                    logger.info("Попробуйте обновить селектор add_modal_search в config.yaml")
                     return 0
             
             # Очищаем поле и вводим имя
@@ -801,81 +790,138 @@ class MaxWebAutomation:
             
             modal_list_selector = self.selectors.get("add_modal_list", ".modal .list .item")
             modal_item_button_selector = self.selectors.get("add_modal_item_button")
+            BATCH_SIZE = 10
+            total_added = 0
+            batch_start = 0
+            add_button_selector_for_reopen = self.selectors.get("add_members_button")
             
-            # Шаг 3: Добавляем пользователей по одному. Каждый раз вводим имя в поиск (чтобы список = только «Ц»),
-            # затем нажимаем кнопку по счёту: 1-й раз — первую, 2-й раз — вторую и т.д. Так добавляется следующий «Ц», а не тот же первый.
-            added_count = 0
-            max_iterations = 500  # защита от бесконечного цикла
-            
-            logger.info("Добавление по имени '%s': каждый раз в поиск вводится имя, затем нажимается по счёту (1-й, 2-й, 3-й…).", name_for_search)
-            
-            for iteration in range(max_iterations):
-                # 1. Каждый раз заново вводим имя в поиск — список показывает только совпадения (только «Ц»)
-                search_input_el = self.page.locator(modal_search_selector).first
-                if search_input_el.count() == 0:
-                    logger.warning("Поле поиска не найдено на итерации %s", iteration + 1)
-                    break
-                search_input_el.clear()
-                time.sleep(0.4)
-                search_input_el.fill(name_for_search)
-                time.sleep(2.5)  # ждём обновления результатов
-                
-                # 2. Берём все кнопки добавления в текущем списке (только отфильтрованные по имени)
-                add_buttons = self.page.locator(modal_item_button_selector).all()
-                if len(add_buttons) == 0:
-                    # Пробуем по элементам списка
-                    list_items = self.page.locator(modal_list_selector).all()
-                    if len(list_items) == 0:
-                        logger.debug("Результатов для '%s' больше нет (итерация %s).", name_for_search, iteration + 1)
-                        break
-                    # Кликаем по счёту: added_count = индекс следующего (0, 1, 2…)
-                    if added_count >= len(list_items):
-                        break
-                    item_to_click = list_items[added_count]
-                    try:
-                        item_to_click.scroll_into_view_if_needed()
-                        time.sleep(0.2)
-                        item_to_click.click(timeout=3000, force=True)
-                        added_count += 1
-                        if added_count <= 3 or added_count % 10 == 0:
-                            logger.info("  Добавлен пользователь %s (по имени '%s')", added_count, name_for_search)
-                        time.sleep(0.8)
-                    except Exception as e:
-                        logger.warning("Ошибка при клике по элементу списка (индекс %s): %s", added_count, e)
-                        break
-                    continue
-                
-                # 3. Кликаем по счёту: 1-й раз — первая кнопка (индекс 0), 2-й раз — вторая (индекс 1) и т.д.
-                if added_count >= len(add_buttons):
-                    logger.debug("Все %s пользователей по имени '%s' уже добавлены.", len(add_buttons), name_for_search)
-                    break
-                
-                btn_to_click = add_buttons[added_count]
+            def _fill_search_and_get_list():
+                search_el = self.page.locator(modal_search_selector).first
+                if search_el.count() == 0:
+                    return [], []
                 try:
-                    btn_to_click.scroll_into_view_if_needed()
+                    search_el.click()
                     time.sleep(0.2)
-                    btn_to_click.click(timeout=3000, force=True)
+                    search_el.clear()
+                    time.sleep(0.3)
+                    search_el.fill(name_for_search)
                 except Exception:
-                    try:
-                        self.page.evaluate("""
-                            (function(button) {
-                                if (button && button.offsetParent !== null) {
-                                    button.click();
-                                    return true;
-                                }
-                                return false;
-                            })(arguments[0]);
-                        """, btn_to_click.element_handle())
-                    except Exception as e:
-                        logger.warning("Не удалось кликнуть по кнопке добавления (индекс %s): %s", added_count, e)
-                        break
-                
-                added_count += 1
-                if added_count <= 3 or added_count % 10 == 0:
-                    logger.info("  Добавлен пользователь %s (по имени '%s')", added_count, name_for_search)
-                time.sleep(0.8)
+                    return [], []
+                time.sleep(2.5)
+                add_buttons = self.page.locator(modal_item_button_selector).all()
+                list_items = self.page.locator(modal_list_selector).all() if len(add_buttons) == 0 else []
+                return add_buttons, list_items
             
-            logger.info("Выбрано пользователей для добавления: %s (по имени '%s').", added_count, name_for_search)
+            def _click_confirm_add():
+                for sel in ["button[aria-label*='добавить']", "button.button--neutral-primary.button--stretched:has-text('Добавить')", "button:has-text('Добавить')"]:
+                    try:
+                        btn = self.page.locator(sel).first
+                        if btn.count() > 0 and btn.is_visible():
+                            btn.click(timeout=5000, force=True)
+                            return True
+                    except Exception:
+                        continue
+                return False
+            
+            logger.info("Добавление по имени '%s' партиями по %s: первые 10 → подтвердить → следующие 10 → …", name_for_search, BATCH_SIZE)
+            modal_sel = self.selectors.get("add_modal", ".modal")
+            
+            while True:
+                if batch_start > 0:
+                    # Модалка уже открыта в конце предыдущей итерации — просто ждём, что она на месте
+                    logger.info("Следующая партия (с %s-го по %s-й)...", batch_start + 1, batch_start + BATCH_SIZE)
+                    modal_sel = self.selectors.get("add_modal", ".modal")
+                    try:
+                        self.page.wait_for_selector(modal_sel, timeout=8000)
+                        time.sleep(0.5)
+                        self.page.wait_for_selector(modal_search_selector, timeout=6000, state="visible")
+                        time.sleep(0.3)
+                    except Exception:
+                        logger.warning("Модальное окно не видно, ждём кнопку «Добавить участников»...")
+                        try:
+                            self.page.wait_for_selector("button:has-text('Добавить участников')", timeout=5000, state="visible")
+                            self.page.locator("button:has-text('Добавить участников')").first.click()
+                            time.sleep(2)
+                            self.page.wait_for_selector(modal_search_selector, timeout=8000, state="visible")
+                        except Exception as e:
+                            logger.warning("Не удалось снова открыть модальное окно: %s", e)
+                            break
+                
+                add_buttons, list_items = _fill_search_and_get_list()
+                if len(add_buttons) == 0 and len(list_items) == 0:
+                    if batch_start == 0:
+                        logger.warning("Не найдено результатов для имени '%s'", name_for_search)
+                    break
+                n_total = len(add_buttons) if add_buttons else len(list_items)
+                if batch_start >= n_total:
+                    break
+                end_idx = min(batch_start + BATCH_SIZE, n_total)
+                batch_count = end_idx - batch_start
+                
+                for i in range(batch_start, end_idx):
+                    # Каждый раз заново вводим имя в поиск, затем добавляем одного пользователя
+                    add_buttons, list_items = _fill_search_and_get_list()
+                    if len(add_buttons) == 0 and len(list_items) == 0:
+                        batch_count = i - batch_start
+                        break
+                    n_now = len(add_buttons) if add_buttons else len(list_items)
+                    if i >= n_now:
+                        batch_count = i - batch_start
+                        break
+                    el = add_buttons[i] if add_buttons else list_items[i]
+                    try:
+                        el.scroll_into_view_if_needed()
+                        time.sleep(0.2)
+                        el.click(timeout=3000, force=True)
+                    except Exception as e:
+                        logger.warning("Ошибка клика по элементу %s: %s", i + 1, e)
+                        batch_count = i - batch_start
+                        break
+                    time.sleep(0.5)
+                
+                if batch_count <= 0:
+                    break
+                logger.info("Выбрано %s человек в этой партии, нажимаем «Добавить»...", batch_count)
+                if not _click_confirm_add():
+                    logger.warning("Кнопка «Добавить» не найдена")
+                    break
+                total_added += batch_count
+                time.sleep(2)
+                if batch_count < BATCH_SIZE:
+                    break
+                batch_start += BATCH_SIZE
+                
+                # Модалка закрылась — ждём появления кнопки «Добавить участников» и снова её нажимаем
+                logger.info("Ждём закрытия модалки и снова открываем «Добавить участников»...")
+                time.sleep(2)
+                reopen_ok = False
+                for reopen_sel in [
+                    "button:has-text('Добавить участников')",
+                    add_button_selector_for_reopen,
+                    "button.cell--primary:has-text('Добавить участников')",
+                ]:
+                    if not reopen_sel:
+                        continue
+                    try:
+                        self.page.wait_for_selector(reopen_sel, timeout=15000, state="visible")
+                        time.sleep(0.5)
+                        self.page.locator(reopen_sel).first.click(timeout=8000, force=True)
+                        time.sleep(2)
+                        self.page.wait_for_selector(modal_sel, timeout=12000)
+                        time.sleep(1)
+                        self.page.wait_for_selector(modal_search_selector, timeout=8000, state="visible")
+                        reopen_ok = True
+                        logger.info("Модалка снова открыта для следующей партии")
+                        break
+                    except Exception as e:
+                        logger.debug("Селектор %s: %s", reopen_sel, e)
+                        continue
+                if not reopen_ok:
+                    logger.warning("Не удалось снова открыть «Добавить участников» для следующей партии")
+                    break
+            
+            added_count = total_added
+            logger.info("Всего добавлено пользователей с именем '%s': %s", name_for_search, added_count)
             
             if added_count == 0:
                 logger.warning("Не найдено результатов для имени '%s'", name)
@@ -902,87 +948,7 @@ class MaxWebAutomation:
                         pass
                 return 0
             
-            # Шаг 5: Подтвердить добавление всех выбранных (финальная кнопка "Добавить")
-            logger.info("Поиск кнопки подтверждения добавления...")
-            confirm_button_selector = self.selectors.get("add_button") or self.selectors.get("confirm_button")
-            
-            # Пробуем разные селекторы для кнопки "Добавить"
-            confirm_selectors_to_try = [
-                "button[aria-label='Добавить']",
-                "button.button--neutral-primary[aria-label='Добавить']",
-                "button.button--stretched[aria-label='Добавить']",
-                confirm_button_selector,
-                "button:has-text('Добавить')",
-            ]
-            
-            confirm_btn = None
-            for sel in confirm_selectors_to_try:
-                if not sel:
-                    continue
-                try:
-                    logger.debug("Пробуем селектор кнопки подтверждения: %s", sel)
-                    btn = self.page.locator(sel).first
-                    count = btn.count()
-                    logger.debug("Найдено кнопок: %s", count)
-                    if count > 0:
-                        # Проверяем что кнопка видима и кликабельна
-                        if btn.is_visible():
-                            logger.info("Кнопка подтверждения найдена по селектору: %s", sel)
-                            confirm_btn = btn
-                            break
-                except Exception as e:
-                    logger.debug("Ошибка с селектором %s: %s", sel, e)
-                    continue
-            
-            if confirm_btn and confirm_btn.count() > 0:
-                logger.info("Кликаем по кнопке подтверждения добавления...")
-                try:
-                    # Способ 1: Обычный клик
-                    confirm_btn.click(timeout=5000, force=True)
-                    logger.info("Клик выполнен (обычный способ)")
-                except Exception as e1:
-                    logger.debug("Обычный клик не сработал: %s", e1)
-                    try:
-                        # Способ 2: Через JavaScript
-                        logger.debug("Пробуем клик через JavaScript...")
-                        self.page.evaluate("""
-                            (function() {
-                                const btn = document.querySelector('button[aria-label="Добавить"]') ||
-                                           document.querySelector('button.button--neutral-primary[aria-label="Добавить"]');
-                                if (btn && btn.offsetParent !== null) {
-                                    btn.click();
-                                    return true;
-                                }
-                                return false;
-                            })();
-                        """)
-                        logger.info("Клик выполнен (через JavaScript)")
-                    except Exception as e2:
-                        logger.warning("Клик через JavaScript не сработал: %s", e2)
-                
-                time.sleep(3)  # Ждём завершения добавления
-                logger.info("Добавление подтверждено: добавлено %s пользователей с именем '%s'", added_count, name)
-            else:
-                logger.warning("Кнопка подтверждения добавления не найдена")
-                logger.info("Попробуйте обновить селектор add_button в config.yaml")
-                # Пробуем найти любую кнопку с текстом "Добавить"
-                logger.info("Пробуем найти кнопку с текстом 'Добавить'...")
-                all_buttons = self.page.locator("button:has-text('Добавить')").all()
-                logger.info("Найдено кнопок с текстом 'Добавить': %s", len(all_buttons))
-                if len(all_buttons) > 0:
-                    logger.info("Кликаем по первой найденной кнопке 'Добавить'...")
-                    try:
-                        all_buttons[0].click(timeout=5000, force=True)
-                        time.sleep(3)
-                        logger.info("Добавление подтверждено (через альтернативную кнопку)")
-                    except Exception as e:
-                        logger.warning("Не удалось кликнуть по альтернативной кнопке: %s", e)
-                        return 0
-                else:
-                    logger.error("Кнопка 'Добавить' не найдена. Возможно, пользователи не были выбраны из списка.")
-                    return 0
-            
-            # Шаг 5: Закрываем модальное окно (чтобы цикл мог повториться для следующего имени)
+            # Закрываем модальное окно, если оно ещё открыто (после последней партии могло закрыться по «Добавить»)
             close_button_selector = self.selectors.get("close_button")
             if close_button_selector:
                 try:
