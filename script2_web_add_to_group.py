@@ -16,6 +16,13 @@ import logging
 import sys
 from pathlib import Path
 
+# Чтобы скрипт работал без «pip install -e .» (например, после клона с GitHub):
+# добавляем src в путь поиска модулей
+_script_dir = Path(__file__).resolve().parent
+_src = _script_dir / "src"
+if _src.is_dir() and str(_src) not in sys.path:
+    sys.path.insert(0, str(_src))
+
 try:
     import yaml
 except ImportError:
