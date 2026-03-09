@@ -792,7 +792,7 @@ class MaxWebAutomation:
             modal_item_button_selector = self.selectors.get("add_modal_item_button")
             BATCH_SIZE = 10
             total_added = 0
-            batch_start = 0
+            is_first_batch = True
             add_button_selector_for_reopen = self.selectors.get("add_members_button")
             
             def _fill_search_and_get_list():
@@ -827,98 +827,105 @@ class MaxWebAutomation:
             modal_sel = self.selectors.get("add_modal", ".modal")
             
             while True:
-                if batch_start > 0:
-                    # Модалка уже открыта в конце предыдущей итерации — просто ждём, что она на месте
-                    logger.info("Следующая партия (с %s-го по %s-й)...", batch_start + 1, batch_start + BATCH_SIZE)
-                    modal_sel = self.selectors.get("add_modal", ".modal")
-                    try:
-                        self.page.wait_for_selector(modal_sel, timeout=8000)
-                        time.sleep(0.5)
-                        self.page.wait_for_selector(modal_search_selector, timeout=6000, state="visible")
-                        time.sleep(0.3)
-                    except Exception:
-                        logger.warning("Модальное окно не видно, ждём кнопку «Добавить участников»...")
+                if not is_first_batch:
+                    # Модалка закрылась в предыдущей итерации — ждём появления кнопки «Добавить участников» и снова её нажимаем
+                    logger.info("Следующая партия... Открываем «Добавить участников»...")
+                    time.sleep(2)
+                    reopen_ok = False
+                    for reopen_sel in [
+                        "button:has-text('Добавить участников')",
+                        add_button_selector_for_reopen,
+                        "button.cell--primary:has-text('Добавить участников')",
+                        "button:has-text('Подписчики')",
+                    ]:
+                        if not reopen_sel:
+                            continue
                         try:
-                            self.page.wait_for_selector("button:has-text('Добавить участников')", timeout=5000, state="visible")
-                            self.page.locator("button:has-text('Добавить участников')").first.click()
+                            self.page.wait_for_selector(reopen_sel, timeout=5000, state="visible")
+                            time.sleep(0.5)
+                            self.page.locator(reopen_sel).first.click(timeout=5000, force=True)
                             time.sleep(2)
-                            self.page.wait_for_selector(modal_search_selector, timeout=8000, state="visible")
-                        except Exception as e:
-                            logger.warning("Не удалось снова открыть модальное окно: %s", e)
+                            
+                            # Если это канал, может потребоваться еще один клик по "Добавить" в меню подписчиков
+                            try:
+                                add_in_subscribers = self.page.locator("button.cell--clickable:has-text('Добавить')").first
+                                if add_in_subscribers.count() > 0 and add_in_subscribers.is_visible():
+                                    add_in_subscribers.click(timeout=3000)
+                                    time.sleep(2)
+                            except Exception:
+                                pass
+                                
+                            self.page.wait_for_selector(modal_sel, timeout=8000)
+                            time.sleep(0.5)
+                            self.page.wait_for_selector(modal_search_selector, timeout=6000, state="visible")
+                            reopen_ok = True
+                            logger.info("Модалка снова открыта для следующей партии")
                             break
+                        except Exception as e:
+                            continue
+                    
+                    if not reopen_ok:
+                        # Возможно модалка уже открыта?
+                        try:
+                            if self.page.locator(modal_search_selector).first.is_visible():
+                                logger.info("Модалка уже открыта")
+                                reopen_ok = True
+                        except Exception:
+                            pass
+                            
+                    if not reopen_ok:
+                        logger.warning("Не удалось снова открыть «Добавить участников» для следующей партии")
+                        break
                 
                 add_buttons, list_items = _fill_search_and_get_list()
                 if len(add_buttons) == 0 and len(list_items) == 0:
-                    if batch_start == 0:
+                    if is_first_batch:
                         logger.warning("Не найдено результатов для имени '%s'", name_for_search)
+                    else:
+                        logger.info("Больше нет пользователей для добавления по имени '%s'.", name_for_search)
                     break
+                    
                 n_total = len(add_buttons) if add_buttons else len(list_items)
-                if batch_start >= n_total:
-                    break
-                end_idx = min(batch_start + BATCH_SIZE, n_total)
-                batch_count = end_idx - batch_start
+                batch_count = min(BATCH_SIZE, n_total)
                 
-                for i in range(batch_start, end_idx):
+                clicked_in_this_batch = 0
+                
+                for i in range(batch_count):
                     # Каждый раз заново вводим имя в поиск, затем добавляем одного пользователя
                     add_buttons, list_items = _fill_search_and_get_list()
                     if len(add_buttons) == 0 and len(list_items) == 0:
-                        batch_count = i - batch_start
                         break
                     n_now = len(add_buttons) if add_buttons else len(list_items)
                     if i >= n_now:
-                        batch_count = i - batch_start
                         break
+                        
                     el = add_buttons[i] if add_buttons else list_items[i]
                     try:
                         el.scroll_into_view_if_needed()
                         time.sleep(0.2)
                         el.click(timeout=3000, force=True)
+                        clicked_in_this_batch += 1
                     except Exception as e:
                         logger.warning("Ошибка клика по элементу %s: %s", i + 1, e)
-                        batch_count = i - batch_start
                         break
                     time.sleep(0.5)
                 
-                if batch_count <= 0:
+                if clicked_in_this_batch == 0:
                     break
-                logger.info("Выбрано %s человек в этой партии, нажимаем «Добавить»...", batch_count)
+                    
+                logger.info("Выбрано %s человек в этой партии, нажимаем «Добавить»...", clicked_in_this_batch)
                 if not _click_confirm_add():
                     logger.warning("Кнопка «Добавить» не найдена")
                     break
-                total_added += batch_count
+                    
+                total_added += clicked_in_this_batch
                 time.sleep(2)
-                if batch_count < BATCH_SIZE:
-                    break
-                batch_start += BATCH_SIZE
                 
-                # Модалка закрылась — ждём появления кнопки «Добавить участников» и снова её нажимаем
-                logger.info("Ждём закрытия модалки и снова открываем «Добавить участников»...")
-                time.sleep(2)
-                reopen_ok = False
-                for reopen_sel in [
-                    "button:has-text('Добавить участников')",
-                    add_button_selector_for_reopen,
-                    "button.cell--primary:has-text('Добавить участников')",
-                ]:
-                    if not reopen_sel:
-                        continue
-                    try:
-                        self.page.wait_for_selector(reopen_sel, timeout=15000, state="visible")
-                        time.sleep(0.5)
-                        self.page.locator(reopen_sel).first.click(timeout=8000, force=True)
-                        time.sleep(2)
-                        self.page.wait_for_selector(modal_sel, timeout=12000)
-                        time.sleep(1)
-                        self.page.wait_for_selector(modal_search_selector, timeout=8000, state="visible")
-                        reopen_ok = True
-                        logger.info("Модалка снова открыта для следующей партии")
-                        break
-                    except Exception as e:
-                        logger.debug("Селектор %s: %s", reopen_sel, e)
-                        continue
-                if not reopen_ok:
-                    logger.warning("Не удалось снова открыть «Добавить участников» для следующей партии")
+                # Если изначально было меньше BATCH_SIZE результатов, значит мы добавили всех
+                if n_total < BATCH_SIZE:
                     break
+                    
+                is_first_batch = False
             
             added_count = total_added
             logger.info("Всего добавлено пользователей с именем '%s': %s", name_for_search, added_count)
