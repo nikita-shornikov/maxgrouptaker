@@ -94,12 +94,18 @@ def main():
         print("Введите ID группы (chat-id)")
         print("=" * 60)
         print("Как узнать ID группы:")
-        print("  1. Откройте группу в web.max.ru")
-        print("  2. Посмотрите URL: https://web.max.ru/-71285852438766")
-        print("  3. Число после / (с минусом) - это ID группы")
-        print("     Пример: -71285852438766")
+        print("  Вариант 1 — инвайт-ссылка (новый формат):")
+        print("    Скопируйте ссылку приглашения: https://max.ru/join/TOKEN")
+        print("  Вариант 2 — числовой ID (старый формат):")
+        print("    Откройте группу в web.max.ru, URL: https://web.max.ru/-71285852438766")
+        print("    Число после / (с минусом) - это ID группы. Пример: -71285852438766")
         print("-" * 60)
-        chat_id = input("ID группы: ").strip()
+        try:
+            chat_id = input("ID группы или ссылка: ").strip()
+        except EOFError:
+            logger.error("Не удалось прочитать ввод. Запустите скрипт в интерактивном терминале")
+            logger.info("Или передайте аргументы через CLI: --chat-id <id> --name <имя>")
+            sys.exit(1)
         if not chat_id:
             logger.error("ID группы не указан")
             sys.exit(1)
@@ -112,7 +118,12 @@ def main():
         print("Будут добавлены ВСЕ пользователи с этим именем")
         print("Примеры: Иван, Петр Петров, Мария")
         print("-" * 60)
-        name = input("Имя для поиска: ").strip()
+        try:
+            name = input("Имя для поиска: ").strip()
+        except EOFError:
+            logger.error("Не удалось прочитать ввод. Запустите скрипт в интерактивном терминале")
+            logger.info("Или передайте аргументы через CLI: --chat-id <id> --name <имя>")
+            sys.exit(1)
         if not name:
             logger.error("Имя не указано")
             sys.exit(1)

@@ -186,11 +186,14 @@ class MaxWebAutomation:
         
         try:
             # Вариант 1: Прямой переход по URL
-            # Формат URL: https://web.max.ru/-71285852438766 (с минусом)
-            # Если chat_id уже содержит минус - используем как есть, иначе добавляем минус
-            chat_id_str = str(chat_id)
-            if not chat_id_str.startswith("-"):
-                # Если это положительное число, добавляем минус (группы обычно с минусом)
+            import re as _re
+            chat_id_str = str(chat_id).strip()
+            # Инвайт-ссылка: https://max.ru/join/TOKEN или https://web.max.ru/join/TOKEN
+            _join = _re.search(r'max\.ru/join/(\S+)', chat_id_str)
+            if _join:
+                url = f"https://web.max.ru/join/{_join.group(1)}"
+            elif not chat_id_str.startswith("-"):
+                # Числовой ID без минуса — группы обычно с минусом
                 url = f"https://web.max.ru/-{chat_id_str}"
             else:
                 url = f"https://web.max.ru/{chat_id_str}"
@@ -787,13 +790,23 @@ class MaxWebAutomation:
             # Если после удаления смайликов ничего не осталось, используем исходное имя
             if not name_for_search:
                 name_for_search = name
-            
+
+            # Паттерн для точного совпадения: "Борис" совпадает с "Борис Иванов",
+            # но НЕ с "Борисов" или "Бабушка"
+            name_pattern = re.compile(
+                r'(?<![а-яёa-zA-ZА-ЯЁ])' + re.escape(name_for_search) + r'(?![а-яёa-zA-ZА-ЯЁ])',
+                re.IGNORECASE | re.UNICODE,
+            )
+
             modal_list_selector = self.selectors.get("add_modal_list", ".modal .list .item")
             modal_item_button_selector = self.selectors.get("add_modal_item_button")
             BATCH_SIZE = 10
             total_added = 0
             is_first_batch = True
             add_button_selector_for_reopen = self.selectors.get("add_members_button")
+            PAUSE_EVERY = 100       # пауза каждые N добавленных участников
+            PAUSE_SECONDS = 3600    # длина паузы в секундах (1 час)
+            last_pause_at = 0       # сколько было добавлено на момент последней паузы
             
             def _fill_search_and_get_list():
                 search_el = self.page.locator(modal_search_selector).first
@@ -801,13 +814,16 @@ class MaxWebAutomation:
                     return [], []
                 try:
                     search_el.click()
-                    time.sleep(0.2)
-                    search_el.clear()
                     time.sleep(0.3)
+                    # fill() всегда заменяет всё содержимое поля целиком —
+                    # сначала пустая строка (сброс), затем нужное имя
+                    search_el.fill('')
+                    time.sleep(0.1)
                     search_el.fill(name_for_search)
                 except Exception:
                     return [], []
-                time.sleep(2.5)
+                # Ждём пока MAX обновит список под фильтр
+                time.sleep(3.0)
                 add_buttons = self.page.locator(modal_item_button_selector).all()
                 list_items = self.page.locator(modal_list_selector).all() if len(add_buttons) == 0 else []
                 return add_buttons, list_items
@@ -823,108 +839,203 @@ class MaxWebAutomation:
                         continue
                 return False
             
-            logger.info("Добавление по имени '%s' партиями по %s: первые 10 → подтвердить → следующие 10 → …", name_for_search, BATCH_SIZE)
+            logger.info("Добавление по имени '%s' партиями по %s...", name_for_search, BATCH_SIZE)
             modal_sel = self.selectors.get("add_modal", ".modal")
-            
-            while True:
-                if not is_first_batch:
-                    # Модалка закрылась в предыдущей итерации — ждём появления кнопки «Добавить участников» и снова её нажимаем
-                    logger.info("Следующая партия... Открываем «Добавить участников»...")
-                    time.sleep(2)
-                    reopen_ok = False
-                    for reopen_sel in [
-                        "button:has-text('Добавить участников')",
-                        add_button_selector_for_reopen,
-                        "button.cell--primary:has-text('Добавить участников')",
-                        "button:has-text('Подписчики')",
-                    ]:
-                        if not reopen_sel:
-                            continue
+
+            def _get_search_el():
+                return self.page.locator(modal_search_selector).first
+
+            def _type_name_and_get_matching(index: int):
+                """Вводит имя в поиск и возвращает элемент с нужным индексом."""
+                logger.info("  [%s] Ищем поле поиска...", index)
+                sel = _get_search_el()
+                if sel.count() == 0:
+                    logger.info("  [%s] Поле поиска не найдено — выходим", index)
+                    return None
+                try:
+                    logger.info("  [%s] Клик по полю поиска...", index)
+                    sel.click(timeout=5000, force=True)
+                    time.sleep(0.2)
+                    logger.info("  [%s] Очистка и ввод имени '%s'...", index, name_for_search)
+                    # force=True — не ждать actionability (обходит зависание при rate-limit)
+                    # timeout=5000 — максимум 5 сек на операцию
+                    sel.fill('', force=True, timeout=5000)
+                    time.sleep(0.1)
+                    sel.fill(name_for_search, force=True, timeout=5000)
+                except Exception as e:
+                    logger.warning("  [%s] Не удалось ввести имя в поиск: %s", index, e)
+                    return None
+
+                logger.info("  [%s] Ждём результатов поиска...", index)
+                time.sleep(2.5)
+
+                btns = self.page.locator(modal_item_button_selector).all() if modal_item_button_selector else []
+                elements = btns if btns else self.page.locator(modal_list_selector).all()
+                logger.info("  [%s] Найдено элементов в списке: %s", index, len(elements))
+
+                if not elements:
+                    logger.info("  [%s] Список пуст — все добавлены или поиск не дал результатов", index)
+                    return None
+
+                # Фильтруем по имени
+                matching = []
+                for el in elements:
+                    text = ''
+                    try:
+                        # timeout=3000 — чтобы evaluate() не зависал при заторможённой странице
+                        text = el.evaluate("""el => {
+                            const item = el.closest('[data-index]') || el.closest('.item') || el.parentElement;
+                            return (item?.innerText || '').trim().slice(0, 150);
+                        }""", timeout=3000)
+                        text = (text or '').strip()
+                    except Exception:
+                        pass
+                    if not text or name_pattern.search(text):
+                        matching.append(el)
+
+                logger.info("  [%s] Подходящих по имени: %s", index, len(matching))
+
+                if index < len(matching):
+                    return matching[index]
+
+                logger.info("  [%s] Индекс >= кол-ва результатов (%s) — партия завершена", index, len(matching))
+                return None
+
+            def _open_add_members_modal():
+                """Открывает модалку добавления участников (ищет кнопку, кликает).
+                Возвращает True если модалка открылась."""
+                for btn_sel in [
+                    "button:has-text('Добавить участников')",
+                    add_button_selector_for_reopen,
+                    "button.cell--primary:has-text('Добавить участников')",
+                    "button:has-text('Подписчики')",
+                ]:
+                    if not btn_sel:
+                        continue
+                    try:
+                        self.page.wait_for_selector(btn_sel, timeout=5000, state="visible")
+                        time.sleep(0.5)
+                        self.page.locator(btn_sel).first.click(timeout=5000, force=True)
+                        time.sleep(2)
+                        # Для каналов может быть второй клик «Добавить» внутри меню
                         try:
-                            self.page.wait_for_selector(reopen_sel, timeout=5000, state="visible")
-                            time.sleep(0.5)
-                            self.page.locator(reopen_sel).first.click(timeout=5000, force=True)
-                            time.sleep(2)
-                            
-                            # Если это канал, может потребоваться еще один клик по "Добавить" в меню подписчиков
-                            try:
-                                add_in_subscribers = self.page.locator("button.cell--clickable:has-text('Добавить')").first
-                                if add_in_subscribers.count() > 0 and add_in_subscribers.is_visible():
-                                    add_in_subscribers.click(timeout=3000)
-                                    time.sleep(2)
-                            except Exception:
-                                pass
-                                
-                            self.page.wait_for_selector(modal_sel, timeout=8000)
-                            time.sleep(0.5)
-                            self.page.wait_for_selector(modal_search_selector, timeout=6000, state="visible")
-                            reopen_ok = True
-                            logger.info("Модалка снова открыта для следующей партии")
-                            break
-                        except Exception as e:
-                            continue
-                    
-                    if not reopen_ok:
-                        # Возможно модалка уже открыта?
-                        try:
-                            if self.page.locator(modal_search_selector).first.is_visible():
-                                logger.info("Модалка уже открыта")
-                                reopen_ok = True
+                            add_in = self.page.locator("button.cell--clickable:has-text('Добавить')").first
+                            if add_in.count() > 0 and add_in.is_visible():
+                                add_in.click(timeout=3000)
+                                time.sleep(2)
                         except Exception:
                             pass
-                            
-                    if not reopen_ok:
-                        logger.warning("Не удалось снова открыть «Добавить участников» для следующей партии")
-                        break
-                
-                add_buttons, list_items = _fill_search_and_get_list()
-                if len(add_buttons) == 0 and len(list_items) == 0:
-                    if is_first_batch:
-                        logger.warning("Не найдено результатов для имени '%s'", name_for_search)
-                    else:
-                        logger.info("Больше нет пользователей для добавления по имени '%s'.", name_for_search)
-                    break
-                    
-                n_total = len(add_buttons) if add_buttons else len(list_items)
-                batch_count = min(BATCH_SIZE, n_total)
-                
-                clicked_in_this_batch = 0
-                
-                for i in range(batch_count):
-                    # Каждый раз заново вводим имя в поиск, затем добавляем одного пользователя
-                    add_buttons, list_items = _fill_search_and_get_list()
-                    if len(add_buttons) == 0 and len(list_items) == 0:
-                        break
-                    n_now = len(add_buttons) if add_buttons else len(list_items)
-                    if i >= n_now:
-                        break
-                        
-                    el = add_buttons[i] if add_buttons else list_items[i]
+                        self.page.wait_for_selector(modal_sel, timeout=8000)
+                        time.sleep(0.5)
+                        self.page.wait_for_selector(modal_search_selector, timeout=6000, state="visible")
+                        return True
+                    except Exception:
+                        continue
+                return False
+
+            def _reopen_modal():
+                """Переоткрывает модалку после закрытия. Возвращает True если успешно."""
+                time.sleep(2)
+
+                # Возможно модалка уже открыта
+                try:
+                    if _get_search_el().is_visible():
+                        return True
+                except Exception:
+                    pass
+
+                # Попытка 1: кнопка «Добавить участников» видна напрямую
+                if _open_add_members_modal():
+                    logger.info("Модалка открыта")
+                    return True
+
+                # Попытка 2: профиль группы закрылся вместе с модалкой —
+                # открываем его снова, затем ищем кнопку
+                logger.info("Кнопка не найдена, переоткрываем профиль группы...")
+                group_info_selectors = [
+                    "button[aria-label*='Открыть профиль']",
+                    "button[aria-label*='открыть профиль']",
+                    "button.main.content--clickable",
+                    "button.content--clickable",
+                    self.selectors.get("group_info_button", ""),
+                ]
+                for sel in group_info_selectors:
+                    if not sel:
+                        continue
                     try:
-                        el.scroll_into_view_if_needed()
+                        self.page.wait_for_selector(sel, timeout=5000, state="visible")
+                        self.page.locator(sel).first.click(timeout=5000, force=True)
+                        time.sleep(3)
+                        logger.info("Профиль группы переоткрыт")
+                        break
+                    except Exception:
+                        continue
+
+                # Теперь снова ищем кнопку добавления
+                if _open_add_members_modal():
+                    logger.info("Модалка открыта после переоткрытия профиля")
+                    return True
+
+                return False
+
+            while True:
+                if not is_first_batch:
+                    logger.info("Следующая партия... Открываем «Добавить участников»...")
+                    if not _reopen_modal():
+                        logger.warning("Не удалось открыть модалку")
+                        break
+
+                # ── Набираем партию: каждый раз вводим имя → берём [i]-й результат ──
+                # После клика контакт остаётся в списке на той же позиции,
+                # поэтому следующий ввод имени берём уже элемент [i+1], [i+2]...
+                clicked_in_this_batch = 0
+                for i in range(BATCH_SIZE):
+                    el = _type_name_and_get_matching(index=i)
+                    if el is None:
+                        logger.info("Результаты поиска закончились на позиции %s.", i)
+                        break
+                    try:
+                        el.scroll_into_view_if_needed(timeout=3000)
                         time.sleep(0.2)
                         el.click(timeout=3000, force=True)
                         clicked_in_this_batch += 1
                     except Exception as e:
-                        logger.warning("Ошибка клика по элементу %s: %s", i + 1, e)
+                        logger.warning("Ошибка клика по элементу %s: %s", i, e)
                         break
                     time.sleep(0.5)
-                
+
                 if clicked_in_this_batch == 0:
+                    if is_first_batch:
+                        logger.warning("Не найдено результатов для имени '%s'", name_for_search)
+                    else:
+                        logger.info("Больше нет пользователей для добавления.")
                     break
-                    
-                logger.info("Выбрано %s человек в этой партии, нажимаем «Добавить»...", clicked_in_this_batch)
+
+                logger.info("Выбрано %s человек, нажимаем «Добавить»...", clicked_in_this_batch)
                 if not _click_confirm_add():
                     logger.warning("Кнопка «Добавить» не найдена")
                     break
-                    
+
                 total_added += clicked_in_this_batch
                 time.sleep(2)
-                
-                # Если изначально было меньше BATCH_SIZE результатов, значит мы добавили всех
-                if n_total < BATCH_SIZE:
+
+                # Если набрали меньше полной партии — больше никого нет
+                if clicked_in_this_batch < BATCH_SIZE:
+                    logger.info("Все пользователи добавлены.")
                     break
-                    
+
+                # Пауза каждые PAUSE_EVERY добавленных участников
+                if total_added - last_pause_at >= PAUSE_EVERY:
+                    logger.info(
+                        "Добавлено %s участников. Пауза %s мин...",
+                        total_added, PAUSE_SECONDS // 60,
+                    )
+                    for remaining in range(PAUSE_SECONDS, 0, -60):
+                        logger.info("  Возобновление через %s мин.", remaining // 60)
+                        time.sleep(60)
+                    last_pause_at = total_added
+                    logger.info("Пауза окончена, продолжаем...")
+
                 is_first_batch = False
             
             added_count = total_added
